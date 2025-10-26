@@ -1,55 +1,125 @@
-import express from 'express'
-import jwt from 'jsonwebtoken'
-import z from 'zod';
-import { middleware } from './middleware';
-const app = express();
+import express from "express"
+import {CreateRoomSchema, CreateUserSchema, SigninSchema} from "@repo/common/types"
+import {prismaClient as prisma} from "@repo/db/client"
+import { JWT_SECRET } from "@repo/backend-common/config"
+import jwt from "jsonwebtoken"
+import bcrypt from "bcrypt"
+import { middleware } from "./middleware"
+
+const app = express()
+app.use(express.json())
 const PORT = process.env.PORT || 3000;
-app.use(express.json());
 
-const JWT_SECRET = process.env.JWT_SECRET || "11111"
-//zod validalidation
+app.post("/api/v1/signup", async(req, res) =>{
 
-const userSchema = z.string()
- .min(3, "Username must be at least 3 characters long")
-  .max(20, "Username cannot exceed 20 characters")
-.regex(/^[a-zA-Z0-9_]+$/, "Username can only contain letters, numbers, and underscores");
+    const parsedData = CreateUserSchema.safeParse(req.body);
+    const userPassword = parsedData.data?.password as string;
 
-const passwordSchema = z.string()
- .min(3, "Password must be at least 3 characters long")
-  .max(20, "Password cannot exceed 20 characters")
-.regex(/^[a-zA-Z0-9_]+$/, "Password can only contain letters, numbers, and underscores");
-  
+    if (!parsedData.success) {
+        res.status(401).json({
+            message: "invalid inputs"
+        })
+    }
+    try {
+        const saltRounds = 10;
 
-app.post("/api/v1/signup", (req, res) => {
+        const hashedPassword = await bcrypt.hash(userPassword, saltRounds) 
 
-    const {username, password} = req.body;
-    userSchema.parse(username)
-    passwordSchema.parse(password)
-    if(!username || !password) res.status(400).send ('username and password are required ):')
+        const user = await prisma.user.create({
+            data: {
+                email: parsedData.data?.email!,
+                password: hashedPassword,
+                name: parsedData.data?.name!
+            }
+        })
 
-} )
-
-app.post("/api/v1/signin", (req, res) => {
-    
-    const userId = 1;
-   const token = jwt.sign({
-        userId
-    }, JWT_SECRET)
-
-     res.json({token})
+        res.status(201).json({
+            userId: (await user)?.id
+        })
+    } catch (error) {
+        res.status(411).json({
+            message: "user already exists with this email"
+        })
+    }
 })
 
 
 
-app.post("/api/v1/create-room", middleware, (req, res) => {
-    // db call expected
-    res.json({
-        roomId: 123
-    })
-} )
+app.post("/api/v1/signin", async(req, res) => {
 
+    const parsedData = SigninSchema.safeParse(req.body);
+    const userPassword = parsedData.data?.password as string;
 
+    if (!parsedData.success) {
+        return res.status(203).json({
+            message: "no valid data provided, email and password required"
+        })
+    }
 
-app.listen(PORT, () => {
-    console.log("server is up @3000")
+    try {
+        const user = await prisma.user.findFirst({
+            where: {
+                email: parsedData.data?.email,
+            }
+        })
+
+        if (!user) {
+            return res.status(401).json({ message: "user not found" });
+        }  
+
+        const decodedPassword = await bcrypt.compare(userPassword, user.password );
+        if(!decodedPassword) {
+           return res.status(401).json({
+                message: "Invalid email or password"
+            })
+        }
+
+       const token =  jwt.sign({
+            userId: user?.id
+        }, JWT_SECRET,  { expiresIn: "7d" })
+
+        res.status(202).json({
+            token
+        });
+
+    } catch (error) {
+        res.status(400).json({
+            message: "invalid or unauthorized"
+        })
+    }
 })
+
+
+app.post("/api/v1/create-room", middleware, async(req, res) => {
+
+    const parsedData = CreateRoomSchema.safeParse(req.body)
+    const userId = req.userId as string;
+
+    if(!userId || !parsedData.success) {
+        res.status(203).json({
+            message: "unauthorized"
+        })
+    }
+
+    try {
+        const room = await prisma.room.create({
+            data: {
+                slug: parsedData.data?.name!,
+                adminId: userId
+            }
+        })
+
+        res.status(201).json({
+            room: room.id,
+            adminId: room.adminId
+        })
+    } catch (error) {
+        res.status(411).json({
+            message: "room already exists"
+        })
+    }
+})
+
+
+
+app.listen(PORT, () => console.log("server up @3000"));
