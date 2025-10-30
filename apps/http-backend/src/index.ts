@@ -120,11 +120,11 @@ app.post("/api/v1/create-room", middleware, async(req, res) => {
     }
 })
 
-app.get("/api/v1/chats/:roomId", async (req, res) => {
-    const roomId = Number(req.params.roomId)
-    const messages = await prisma.chat.findMany({
+app.get("/api/v1/room/:slug", async (req, res) => {
+    const slug = req.params.slug;
+    const room = await prisma.room.findFirst({
         where: {
-            roomId: roomId
+            slug
         },
         orderBy: {id: "desc"},
         take: 50
@@ -132,10 +132,10 @@ app.get("/api/v1/chats/:roomId", async (req, res) => {
     })
 
     res.json({
-        messages
+        room
     })
 })
 
 
 
-app.listen(PORT, () => console.log("server up @3000"));
+app.listen(PORT, () => console.log(`server up @${PORT}`));
