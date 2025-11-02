@@ -54,7 +54,11 @@ wss.on('connection', function connection(ws, request) {
 
 
 ws.on('message', async function message(data) {
-  let parsedData;
+ 
+
+  try {
+
+     let parsedData;
    if (typeof data !== "string") {
       parsedData = JSON.parse(data.toString());
     } else {
@@ -74,8 +78,8 @@ ws.on('message', async function message(data) {
     // remove the room
       user.rooms = user?.rooms.filter(x => x === parsedData.room);
   }
-
-  if (parsedData.type === "chat") {
+    
+    if (parsedData.type === "chat") {
     const roomId = parsedData.roomId;
     const message = parsedData.message;
 
@@ -98,6 +102,10 @@ ws.on('message', async function message(data) {
       }
     });
   }
+  } catch (error:any) {
+    console.log("err: ", error.message)
+  }
+  
 });
 
 ws.send('something');
